@@ -172,6 +172,12 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       carts.set(id, { items: [], store: h.get('store-identifier')! });
       return Response.json({ data: { id, checkout_url: `https://toys-lab.com/checkout/${id}` } });
     }
+    const a = url.pathname.match(/^\/v2\/checkout\/([^/]+)\/assign$/);
+    if (a && carts.has(a[1])) {
+      if (h.get('authorization') !== 'Bearer customer-jwt-0123456789abcdefghij') return new Response('{"error":"unauthorized"}', { status: 401 });
+      (carts.get(a[1]) as { customer?: string }).customer = 'c1';
+      return Response.json({ data: { id: a[1], checkout_url: `https://toys-lab.com/en/checkout/${a[1]}?lang=en&` } });
+    }
     const m = url.pathname.match(/^\/v2\/checkout\/([^/]+)\/items$/);
     if (m && carts.has(m[1])) {
       const item = JSON.parse(String(init?.body));
@@ -200,6 +206,13 @@ const partial = await (await req('/checkout', { method: 'POST', body: JSON.strin
 check('Unavailable item skipped, rest still paid', !!partial.checkoutUrl && partial.skipped?.[0] === '9999', partial);
 check('Bad cart rejected', (await req('/checkout', { method: 'POST', body: JSON.stringify({ items: [{ id: 'gc-100', quantity: 1 }] }) })).status === 400);
 check('Empty cart rejected', (await req('/checkout', { method: 'POST', body: JSON.stringify({ items: [] }) })).status === 400);
+const logged = await (await req('/checkout', { method: 'POST', body: JSON.stringify({ items: [{ id: '1001', quantity: 1 }], customerToken: 'customer-jwt-0123456789abcdefghij' }) })).json() as { checkoutUrl?: string; linkedToCustomer?: boolean };
+const lastCart = [...carts.entries()].pop()!;
+check('Logged-in checkout links the cart to the customer', logged.linkedToCustomer === true && (lastCart[1] as { customer?: string }).customer === 'c1', logged);
+check('Linked checkout link is in Arabic', logged.checkoutUrl === `https://toys-lab.com/ar/checkout/${lastCart[0]}?lang=ar&`, logged.checkoutUrl);
+const badTok = await (await req('/checkout', { method: 'POST', body: JSON.stringify({ items: [{ id: '1001', quantity: 1 }], customerToken: 'expired-token-0123456789abcdef' }) })).json() as { checkoutUrl?: string; linkedToCustomer?: boolean };
+check('Expired login still gets a payment link (as guest)', !!badTok.checkoutUrl && badTok.linkedToCustomer === false, badTok);
+check('Link error shown on status page', !!JSON.parse(mem.get('lastAssignError') ?? 'null'));
 mem.set('catalog', JSON.stringify({ updatedAt: Date.now(), products: [{ id: '1001', name: 'لعبة 1', category: 'boys', age: '6+', price: 101 }] }));
 const test = await (await req('/checkout/test')).json() as { ok: boolean; checkoutUrl?: string };
 check('Test page confirms checkout works', test.ok === true && !!test.checkoutUrl, test);

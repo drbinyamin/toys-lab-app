@@ -190,14 +190,18 @@ async function handleCheckout(req: Request, env: Env) {
   const noteRaw = (body as { note?: unknown }).note;
   const note = typeof noteRaw === 'string' && noteRaw.trim() ? noteRaw.trim().slice(0, 300) : undefined;
 
+  const tokenRaw = (body as { customerToken?: unknown }).customerToken;
+  const customerToken = typeof tokenRaw === 'string' && tokenRaw.length > 20 && tokenRaw.length < 4000 ? tokenRaw : undefined;
+
   const known = await env.STORE.get('checkoutBase');
-  const result = await createCheckout(id, items, note, known);
+  const result = await createCheckout(id, items, note, known, customerToken);
   if (result.base && result.base !== known) await env.STORE.put('checkoutBase', result.base);
   if (!result.ok) {
     await env.STORE.put('lastCheckoutError', JSON.stringify({ at: new Date().toISOString(), ...result }));
     return json({ error: result.error }, 502);
   }
-  return json({ checkoutUrl: result.checkoutUrl, skipped: result.failed.map((f) => f.id) });
+  if (result.assignError) await env.STORE.put('lastAssignError', JSON.stringify({ at: new Date().toISOString(), error: result.assignError }));
+  return json({ checkoutUrl: result.checkoutUrl, skipped: result.failed.map((f) => f.id), linkedToCustomer: result.assigned });
 }
 
 async function handleCheckoutTest(env: Env) {
@@ -232,11 +236,12 @@ export default {
     }
 
     if (url.pathname === '/' && req.method === 'GET') {
-      const [tokens, catalog, building, lastError] = await Promise.all([
+      const [tokens, catalog, building, lastError, lastAssignError] = await Promise.all([
         readJSON<Tokens>(env.STORE, 'tokens'),
         readJSON<Catalog>(env.STORE, 'catalog'),
         readJSON<Building>(env.STORE, 'building'),
         readJSON<{ at: string; message: string }>(env.STORE, 'lastError'),
+        readJSON<{ at: string; error: string }>(env.STORE, 'lastAssignError'),
       ]);
       return json({
         service: 'Toys Lab API',
@@ -246,6 +251,7 @@ export default {
         lastSync: catalog ? new Date(catalog.updatedAt).toISOString() : null,
         syncing: building ? `${building.nextPage - 1} of ${building.totalPages} pages, ${building.products.length} products so far` : null,
         lastError,
+        lastCheckoutLinkError: lastAssignError,
       });
     }
 

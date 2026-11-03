@@ -10,6 +10,7 @@ import React, { useEffect, useRef } from 'react';
 import { ActivityIndicator, I18nManager, ScrollView, ScrollViewInstance, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Header, TabBar } from './src/components/Chrome';
+import { LoginSheet } from './src/components/LoginSheet';
 import { CitySheet, ProductSheet } from './src/components/Sheets';
 import { ToastProvider } from './src/components/Toast';
 import { AccountScreen, FavoritesScreen } from './src/screens/Account';
@@ -17,6 +18,7 @@ import { CartScreen } from './src/screens/Cart';
 import { CategoriesScreen } from './src/screens/Categories';
 import { GiftsScreen } from './src/screens/Gifts';
 import { HomeScreen } from './src/screens/Home';
+import { CustomerProvider } from './src/customer';
 import { StoreProvider, useStore } from './src/store';
 import { useColors } from './src/theme';
 
@@ -56,6 +58,7 @@ function Shell() {
       <TabBar />
       <ProductSheet />
       <CitySheet />
+      <LoginSheet />
     </View>
   );
 }
@@ -73,9 +76,11 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StoreProvider>
-        <ToastProvider>
-          <Shell />
-        </ToastProvider>
+        <CustomerProvider>
+          <ToastProvider>
+            <Shell />
+          </ToastProvider>
+        </CustomerProvider>
       </StoreProvider>
     </SafeAreaProvider>
   );

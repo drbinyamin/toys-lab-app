@@ -1,5 +1,5 @@
 import React from 'react';
-import { Linking, Modal, Pressable, ScrollView, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { categoryOf, CITIES, STORE } from '../data/catalog';
 import { openWhatsApp } from '../order';
@@ -10,18 +10,20 @@ import { FavButton, ProductThumb, useAddToCart } from './ProductCard';
 import { useToast } from './Toast';
 import { Button, Panel, T } from './ui';
 
-function Sheet({ visible, onClose, children }: { visible: boolean; onClose: () => void; children: React.ReactNode }) {
+export function Sheet({ visible, onClose, children, avoidKeyboard }: { visible: boolean; onClose: () => void; children: React.ReactNode; avoidKeyboard?: boolean }) {
   const c = useColors();
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(4,14,28,0.5)' }} onPress={onClose} accessibilityLabel="إغلاق" />
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '92%', backgroundColor: c.bg, borderTopLeftRadius: 26, borderTopRightRadius: 26, overflow: 'hidden' }}>
-        <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}>{children}</ScrollView>
-        <Pressable onPress={onClose} accessibilityLabel="إغلاق" style={{ position: 'absolute', top: 12, left: 12, width: 38, height: 38, borderRadius: 19, backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name="x" color={c.ink} size={18} />
-        </Pressable>
-      </View>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={avoidKeyboard && Platform.OS === 'ios' ? 'padding' : undefined} enabled={!!avoidKeyboard}>
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(4,14,28,0.5)' }} onPress={onClose} accessibilityLabel="إغلاق" />
+        <View style={{ maxHeight: '92%', backgroundColor: c.bg, borderTopLeftRadius: 26, borderTopRightRadius: 26, overflow: 'hidden' }}>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}>{children}</ScrollView>
+          <Pressable onPress={onClose} accessibilityLabel="إغلاق" style={{ position: 'absolute', top: 12, left: 12, width: 38, height: 38, borderRadius: 19, backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="x" color={c.ink} size={18} />
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

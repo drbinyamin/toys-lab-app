@@ -37,6 +37,12 @@ After the first deploy, put the server address in `STORE.catalogUrl` (`src/data/
 
 Tests: `cd worker && npm test` runs the whole flow against a simulated Salla.
 
+## Customer accounts, orders and payment
+
+- **Login:** phone number + SMS code sent by Salla (`src/api/salla.ts`, `src/components/LoginSheet.tsx`). Uses the same storefront API as toys-lab.com, so it's the customer's existing store account. The login key stays on the phone in secure storage.
+- **My orders:** the Account tab lists the customer's orders from the store with their status, and each order shows its shipments (company, tracking number, tracking link).
+- **Payment:** the server (`worker/src/checkout.ts`) makes a cart on the store through Salla's Checkout APIs, links it to the logged-in customer, and returns the store's checkout link (in Arabic). Customers can also continue as guests. After payment the app looks for the new order, shows a thank-you screen with the order number and empties the cart.
+
 ## Run locally
 
 ```bash

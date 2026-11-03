@@ -1,49 +1,77 @@
-import React from 'react';
-import { Linking, Pressable, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Linking, Pressable, View } from 'react-native';
+import type { Order as OrderT } from '../api/salla';
+import { OrderRow, OrderSheet, useOrders } from '../components/Orders';
+import { useCustomer } from '../customer';
 import { Icon, Mascot, UIName } from '../components/Icons';
 import { ProductGrid } from '../components/ProductCard';
-import { Empty, Panel, SectionHead, T } from '../components/ui';
+import { Button, Empty, Panel, SectionHead, T } from '../components/ui';
 import { STORE } from '../data/catalog';
 import { openWhatsApp } from '../order';
 import { useStore } from '../store';
-import { fonts, useColors } from '../theme';
+import { fonts, ltr, useColors } from '../theme';
 
 export function AccountScreen() {
   const c = useColors();
-  const { favs, city, setCityPicker, setTab } = useStore();
+  const { favs, city, setCityPicker, setTab, isSample } = useStore();
+  const { customer, askLogin, signOut } = useCustomer();
+  const { list, loading, error, reload } = useOrders();
+  const [open, setOpen] = useState<OrderT | null>(null);
+  const [confirmOut, setConfirmOut] = useState(false);
+
   return (
     <View style={{ padding: 16, gap: 18 }}>
       <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 12, backgroundColor: c.sun, borderRadius: 20, padding: 14 }}>
         <View style={{ backgroundColor: '#fff', borderRadius: 30, padding: 4 }}><Mascot size={52} /></View>
-        <View style={{ flex: 1 }}>
-          <T weight="bold" style={{ fontSize: 17, color: c.onSun }}>أهلاً بك في تويز لاب</T>
-          <T style={{ fontSize: 13, color: c.onSun, opacity: 0.8 }}>تسجيل الدخول وتتبع الطلبات يتفعّل بعد ربط المتجر</T>
+        <View style={{ flex: 1, gap: 2 }}>
+          <T weight="bold" style={{ fontSize: 17, color: c.onSun }}>{customer ? `أهلاً ${customer.name || 'بك'} 👋` : 'أهلاً بك في تويز لاب'}</T>
+          <T style={{ fontSize: 13, color: c.onSun, opacity: 0.8 }}>
+            {customer ? ltr(`+966 ${customer.phone}`) : isSample ? 'تسجيل الدخول يتفعّل بعد ربط المتجر' : 'سجّل دخولك لتتابع طلباتك وشحناتك'}
+          </T>
         </View>
+        {!customer && !isSample ? (
+          <Pressable onPress={() => askLogin()} style={{ backgroundColor: '#074680', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9 }}>
+            <T weight="bold" style={{ color: '#fff', fontSize: 13.5 }}>دخول</T>
+          </Pressable>
+        ) : null}
       </View>
 
-      <View style={{ flexDirection: 'row-reverse', gap: 10 }}>
-        <Stat label="رصيد المحفظة" value="0 ر.س" note="للمبالغ المستردة" />
-        <Stat label="المفضلة" value={String(favs.length)} note="ألعاب محفوظة" />
-      </View>
-
-      <View>
-        <SectionHead title="طلباتي" />
-        <Panel style={{ padding: 0, gap: 0 }}>
-          <Order no="#10482 · 3 قطع" status="قيد التوصيل" going />
-          <Order no="#10391 · قطعة واحدة" status="تم التسليم" last />
+      {customer ? (
+        <View>
+          <SectionHead title="طلباتي" action={loading ? undefined : 'تحديث'} onAction={reload} />
+          {loading && !list ? <ActivityIndicator color={c.brand} /> : null}
+          {error ? <T weight="semibold" style={{ color: c.sale, fontSize: 13 }}>{error}</T> : null}
+          {list && list.length ? (
+            <Panel style={{ padding: 0, gap: 0 }}>
+              {list.map((o, i) => <OrderRow key={o.id} order={o} last={i === list.length - 1} onPress={() => setOpen(o)} />)}
+            </Panel>
+          ) : null}
+          {list && !list.length && !loading ? (
+            <Empty art={<Mascot size={70} />} title="ما عندك طلبات للحين" body="طلباتك من التطبيق أو الموقع تظهر هنا مع حالة الشحن." action="تسوّق الآن" onAction={() => setTab('cats')} />
+          ) : null}
+        </View>
+      ) : !isSample ? (
+        <Panel>
+          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 8 }}>
+            <Icon name="truck" color={c.brand} size={20} />
+            <T weight="bold">تتبّع طلباتك</T>
+          </View>
+          <T muted style={{ fontSize: 13 }}>سجّل دخولك برقم جوالك وتشوف كل طلباتك من التطبيق والموقع، وحالة الشحن ورقم التتبع.</T>
+          <Button kind="sun" label="سجّل دخولك" onPress={() => askLogin()} />
         </Panel>
-        <T muted style={{ fontSize: 11.5, marginTop: 6 }}>طلبات توضيحية</T>
-      </View>
+      ) : null}
 
       <Panel style={{ padding: 0, gap: 0 }}>
         <Item icon="heart" label="المفضلة" note={String(favs.length)} onPress={() => setTab('fav')} />
         <Item icon="pin" label="مدينة التوصيل" note={city} onPress={() => setCityPicker(true)} />
         <Item icon="chat" label="تواصل معنا بالواتساب" onPress={() => openWhatsApp('مرحباً تويز لاب')} />
         <Item icon="globe" label="زيارة الموقع" onPress={() => Linking.openURL(STORE.website)} />
-        <Item icon="doc" label="سياسة الاستبدال والاسترجاع" onPress={() => Linking.openURL(STORE.website)} last />
+        <Item icon="doc" label="سياسة الاستبدال والاسترجاع" onPress={() => Linking.openURL(STORE.website)} last={!customer} />
+        {customer ? <Item icon="user" label={confirmOut ? 'اضغط مرة ثانية لتسجيل الخروج' : 'تسجيل الخروج'} onPress={() => { if (confirmOut) { signOut(); setConfirmOut(false); } else setConfirmOut(true); }} last /> : null}
       </Panel>
 
       <T muted style={{ fontSize: 12, textAlign: 'center' }}>تويز لاب · متجر ألعاب الأطفال والألعاب التعليمية · جدة</T>
+      <OrderSheet order={open} onClose={() => setOpen(null)} />
     </View>
   );
 }
@@ -63,28 +91,7 @@ export function FavoritesScreen() {
   );
 }
 
-function Stat({ label, value, note }: { label: string; value: string; note: string }) {
-  const c = useColors();
-  return (
-    <Panel style={{ flex: 1, gap: 2, padding: 12 }}>
-      <T muted style={{ fontSize: 12 }}>{label}</T>
-      <T style={{ fontFamily: fonts.display, fontSize: 22, lineHeight: 30, color: c.brand }}>{value}</T>
-      <T muted style={{ fontSize: 12 }}>{note}</T>
-    </Panel>
-  );
-}
 
-function Order({ no, status, going, last }: { no: string; status: string; going?: boolean; last?: boolean }) {
-  const c = useColors();
-  return (
-    <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', padding: 14, borderBottomWidth: last ? 0 : 1, borderColor: c.line }}>
-      <T style={{ fontSize: 13.5 }}>طلب {no}</T>
-      <View style={{ borderRadius: 99, paddingHorizontal: 10, paddingVertical: 3, backgroundColor: going ? 'rgba(255,201,40,0.35)' : 'rgba(22,153,106,0.18)' }}>
-        <T weight="bold" style={{ fontSize: 11.5, color: going ? c.ink : c.ok }}>{status}</T>
-      </View>
-    </View>
-  );
-}
 
 function Item({ icon, label, note, onPress, last }: { icon: UIName; label: string; note?: string; onPress: () => void; last?: boolean }) {
   const c = useColors();

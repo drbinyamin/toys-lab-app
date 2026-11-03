@@ -44,8 +44,10 @@ export function arabic(url: string | undefined) {
 
 const checkoutUrlOf = (c: CartResponse) => arabic(c.checkout_url || c.urls?.checkout);
 
-async function post(url: string, storeId: string, body: unknown) {
-  const res = await fetch(url, { method: 'POST', headers: headers(storeId), body: JSON.stringify(body) });
+async function post(url: string, storeId: string, body: unknown, customerToken?: string) {
+  const h: Record<string, string> = headers(storeId);
+  if (customerToken) h.Authorization = `Bearer ${customerToken}`;
+  const res = await fetch(url, { method: 'POST', headers: h, body: JSON.stringify(body) });
   const text = await res.text();
   let parsed: unknown = null;
   try { parsed = JSON.parse(text); } catch { /* not JSON */ }
@@ -65,7 +67,7 @@ export async function findBase(storeId: string, known?: string | null) {
   return { base: null, cart: null, tried };
 }
 
-export async function createCheckout(storeId: string, items: CheckoutItem[], note: string | undefined, knownBase?: string | null) {
+export async function createCheckout(storeId: string, items: CheckoutItem[], note: string | undefined, knownBase?: string | null, customerToken?: string) {
   const found = await findBase(storeId, knownBase);
   if (!found.base || !found.cart?.id) {
     return { ok: false as const, error: 'Could not start a Salla cart', tried: found.tried };
@@ -89,10 +91,23 @@ export async function createCheckout(storeId: string, items: CheckoutItem[], not
     }
   }
 
+  // A logged-in customer: link the cart to their account so checkout knows who
+  // they are (address, saved details) and the order shows in their history.
+  let assigned = false;
+  let assignError: string | undefined;
+  if (customerToken && failed.length < items.length) {
+    const r = await post(`${base}/${cart.id}/assign`, storeId, {}, customerToken);
+    assigned = r.ok;
+    if (r.ok) {
+      const next = unwrap(r.body);
+      if (next.id) cart = { ...cart, ...next };
+    } else assignError = `${r.status} ${r.text}`;
+  }
+
   const url = checkoutUrlOf(cart);
   if (!url) return { ok: false as const, error: 'Salla did not return a checkout link', base, failed };
   if (failed.length === items.length) return { ok: false as const, error: 'No items could be added', base, failed };
-  return { ok: true as const, checkoutUrl: url, base, failed };
+  return { ok: true as const, checkoutUrl: url, base, failed, assigned, assignError };
 }
 
 /** Checks the request from the app: real product ids, sensible quantities. */

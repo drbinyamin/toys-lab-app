@@ -10,6 +10,8 @@ export const STORE = {
   website: 'https://toys-lab.com/ar',
   // Address of our store-connection server (worker/). Filled in after its first deploy.
   catalogUrl: 'https://toyslab-api.osama-493.workers.dev',
+  // Toys Lab's store id on Salla (public; shown on the server's /checkout/test page).
+  storeId: '2002788127',
 };
 
 export type IconName =
