@@ -9,7 +9,7 @@ export const STORE = {
   balloonPrice: 35, // placeholder: confirm with the store
   website: 'https://toys-lab.com/ar',
   // Address of our store-connection server (worker/). Filled in after its first deploy.
-  catalogUrl: '',
+  catalogUrl: 'https://toyslab-api.osama-493.workers.dev',
 };
 
 export type IconName =
