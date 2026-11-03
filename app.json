@@ -34,6 +34,15 @@
     },
     "plugins": [
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "619f7114-62e5-418f-aa67-8f7f09fac26e"
+      }
+    },
+    "owner": "drbinyamin",
+    "updates": {
+      "url": "https://u.expo.dev/619f7114-62e5-418f-aa67-8f7f09fac26e"
+    }
   }
 }
