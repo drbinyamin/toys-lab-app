@@ -7,7 +7,7 @@ export type Customer = { token: string; name: string; phone: string };
 type State = {
   customer: Customer | null;
   ready: boolean;
-  signIn: (token: string, phone: string) => Promise<void>;
+  signIn: (token: string, phone: string, name?: string) => Promise<void>;
   signOut: () => Promise<void>;
   /** Opens the login sheet; `then` runs after a successful login. */
   /** `then` gets the new login key, or nothing if the customer continued as a guest. */
@@ -55,12 +55,16 @@ export function CustomerProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const signIn = useCallback(async (token: string, phone: string) => {
-    let name = '';
-    try {
-      const me = await auth.me(token);
-      name = [me.data?.first_name, me.data?.last_name].filter(Boolean).join(' ');
-    } catch {}
+  const signIn = useCallback(async (token: string, phone: string, knownName?: string) => {
+    let name = knownName ?? '';
+    if (!name || !phone) {
+      try {
+        const me = await auth.me(token);
+        name = name || [me.data?.first_name, me.data?.last_name].filter(Boolean).join(' ');
+        const p = typeof me.data?.phone === 'object' ? me.data?.phone?.number : me.data?.phone ?? me.data?.mobile;
+        phone = phone || String(p ?? '').replace(/^\+?966/, '');
+      } catch {}
+    }
     await save({ token, phone, name });
   }, []);
 

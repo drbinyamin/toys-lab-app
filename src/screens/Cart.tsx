@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Switch, TextInput, View } from 'react-native';
-import { payOnStore } from '../api/checkout';
+import { getCheckoutLink } from '../api/checkout';
+import { StoreWebView } from '../components/StoreWebView';
 import { Order, orders as ordersApi } from '../api/salla';
 import { useCustomer } from '../customer';
 import { Icon, Mascot } from '../components/Icons';
@@ -21,24 +22,31 @@ export function CartScreen() {
   const [paying, setPaying] = useState(false);
   const [returnedFromPay, setReturnedFromPay] = useState(false);
   const [placed, setPlaced] = useState<Order | null>(null);
+  const [thanksNoNumber, setThanksNoNumber] = useState(false);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const payment = useRef<{ token?: string; before: Set<number> | null }>({ before: null });
   const { customer, askLogin } = useCustomer();
   const ids = Object.keys(s.cart).filter((id) => s.byId(id));
   // With the real store connected, payment happens on the store's Salla checkout,
   // which handles delivery, payment methods and shipping itself.
   const live = !s.isSample;
 
-  if (placed) {
+  if (placed || thanksNoNumber) {
     return (
       <View style={{ padding: 16, gap: 14 }}>
         <View style={{ alignItems: 'center', gap: 8, backgroundColor: c.surface, borderRadius: 24, borderWidth: 1, borderColor: c.line, padding: 22 }}>
           <Mascot size={90} />
           <T weight="displayBold" style={{ fontSize: 24, textAlign: 'center' }}>تم طلبك بنجاح 🎉</T>
-          <T muted style={{ textAlign: 'center' }}>رقم الطلب</T>
-          <T weight="bold" selectable style={{ fontSize: 22, textAlign: 'center', writingDirection: 'ltr' }}>#{placed.number}</T>
-          <T muted style={{ fontSize: 13, textAlign: 'center' }}>بيوصلك تأكيد من تويز لاب، وتقدر تتابع حالة الطلب والشحن من حسابي.</T>
+          {placed ? (
+            <>
+              <T muted style={{ textAlign: 'center' }}>رقم الطلب</T>
+              <T weight="bold" selectable style={{ fontSize: 22, textAlign: 'center', writingDirection: 'ltr' }}>#{placed.number}</T>
+            </>
+          ) : null}
+          <T muted style={{ fontSize: 13, textAlign: 'center' }}>{customer ? 'بيوصلك تأكيد من تويز لاب، وتقدر تتابع حالة الطلب والشحن من حسابي.' : 'بيوصلك تأكيد من تويز لاب برسالة. سجّل دخولك من حسابي عشان تتابع طلباتك وشحناتك.'}</T>
         </View>
-        <Button kind="sun" label="تتبّع طلبي" icon={<Icon name="truck" color={c.onSun} size={20} />} onPress={() => { setPlaced(null); s.setTab('account'); }} />
-        <Button kind="secondary" label="متابعة التسوق" onPress={() => { setPlaced(null); s.setTab('home'); }} />
+        <Button kind="sun" label="تتبّع طلبي" icon={<Icon name="truck" color={c.onSun} size={20} />} onPress={() => { setPlaced(null); setThanksNoNumber(false); s.setTab('account'); }} />
+        <Button kind="secondary" label="متابعة التسوق" onPress={() => { setPlaced(null); setThanksNoNumber(false); s.setTab('home'); }} />
       </View>
     );
   }
@@ -66,26 +74,34 @@ export function CartScreen() {
     if (!storeItems.length) return;
     setPaying(true);
     setPlaced(null);
+    setThanksNoNumber(false);
     const note = s.wrap ? `تغليف هدية${s.message.trim() ? ` · رسالة الإهداء: ${s.message.trim()}` : ''}` : undefined;
     // Remember the customer's existing orders so we can spot the new one afterwards.
     let before: Set<number> | null = null;
     if (token) {
       try { before = new Set((await ordersApi.list(token)).map((o) => o.id)); } catch { before = null; }
     }
-    const result = await payOnStore(storeItems.map((id) => ({ id, quantity: s.cart[id] })), note, token);
-    if (!result.ok) {
+    payment.current = { token, before };
+    const link = await getCheckoutLink(storeItems.map((id) => ({ id, quantity: s.cart[id] })), note, token);
+    if (!link.ok) {
       setPaying(false);
-      toast(result.message);
+      toast(link.message);
       return;
     }
-    if (result.skipped.length) toast('بعض المنتجات نفدت ولم تُضف لصفحة الدفع');
+    if (link.skipped.length) toast('بعض المنتجات نفدت ولم تُضف لصفحة الدفع');
+    setCheckoutUrl(link.url);
+  };
 
+  /** Back from Salla's payment page: find the new order and say thanks. */
+  const afterCheckout = async (finished: boolean) => {
+    setCheckoutUrl(null);
+    const { token, before } = payment.current;
     if (token && before) {
       // Salla can take a moment to register the order after payment.
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < (finished ? 5 : 2); i++) {
         try {
           const now = await ordersApi.list(token);
-          const fresh = now.find((o) => !before!.has(o.id));
+          const fresh = now.find((o) => !before.has(o.id));
           if (fresh) {
             setPaying(false);
             setPlaced(fresh);
@@ -97,7 +113,12 @@ export function CartScreen() {
       }
     }
     setPaying(false);
-    setReturnedFromPay(true);
+    if (finished) {
+      setThanksNoNumber(true);
+      s.clearCart();
+    } else {
+      setReturnedFromPay(true);
+    }
   };
 
   const startPay = () => {
@@ -213,6 +234,7 @@ export function CartScreen() {
         )}
         <T muted style={{ fontSize: 12.5, textAlign: 'center' }}>واتساب المتجر: {STORE.whatsappDisplay}</T>
       </Panel>
+      {checkoutUrl ? <StoreWebView mode="checkout" visible url={checkoutUrl} onClose={afterCheckout} /> : null}
     </View>
   );
 }

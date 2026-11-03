@@ -36,35 +36,8 @@ async function call<T>(path: string, init: { method?: string; body?: unknown; to
   return json as T;
 }
 
-/** Saudi mobile as Salla expects it: 9 digits starting with 5. */
-export function normalizePhone(input: string) {
-  const digits = input.replace(/[^\d٠-٩]/g, '').replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
-  const local = digits.replace(/^(00966|966)/, '').replace(/^0/, '');
-  return /^5\d{8}$/.test(local) ? local : null;
-}
 
 export const auth = {
-  sendCode: (phone: string) =>
-    call('auth/mobile/send_verification', { body: { type: 'mobile', phone, country_code: 'SA' } }),
-
-  verify: (phone: string, code: string) =>
-    call<{ data: { case: 'authenticated' | 'new_customer'; token?: string } }>('auth/mobile/verify', {
-      body: { type: 'mobile', phone, country_code: 'SA', code },
-    }),
-
-  register: (p: { phone: string; code: string; firstName: string; lastName: string; email?: string }) =>
-    call<{ data: { case: string; token?: string } }>('auth/register', {
-      body: {
-        first_name: p.firstName,
-        last_name: p.lastName,
-        phone: p.phone,
-        country_code: 'SA',
-        verified_by: 'phone',
-        code: Number(p.code),
-        ...(p.email ? { email: p.email } : {}),
-      },
-    }),
-
   me: (token: string) =>
     call<{ data: { id?: number; first_name?: string; last_name?: string; phone?: string | { number?: string }; mobile?: string } }>('auth/user', { token }),
 
