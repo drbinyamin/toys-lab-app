@@ -65,6 +65,22 @@ jobs:
             git push
           fi
 
+      - name: Match the project owner on Expo
+        # The project can move between accounts (e.g. into the toyslab organization).
+        # Ask Expo who owns it now and use that, so publishing keeps working.
+        if: steps.token.outputs.ready == 'true'
+        run: |
+          id=$(jq -r '.expo.extra.eas.projectId // empty' app.json)
+          [ -z "$id" ] && exit 0
+          owner=$(curl -sS https://api.expo.dev/graphql \
+            -H "Authorization: Bearer $EXPO_TOKEN" -H "Content-Type: application/json" \
+            -d "{\"query\":\"query { app { byId(appId: \\\"$id\\\") { ownerAccount { name } } } }\"}" \
+            | jq -r '.data.app.byId.ownerAccount.name // empty')
+          echo "Project owner on Expo: ${owner:-unknown}"
+          if [ -n "$owner" ]; then
+            jq --arg o "$owner" '.expo.owner = $o' app.json > app.tmp && mv app.tmp app.json
+          fi
+
       - name: Publish update
         if: steps.token.outputs.ready == 'true'
         env:
