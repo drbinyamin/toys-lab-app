@@ -36,7 +36,13 @@ function unwrap(body: unknown): CartResponse {
   return (b && typeof b === 'object' && b.data && typeof b.data === 'object' ? b.data : b) ?? {};
 }
 
-const checkoutUrlOf = (c: CartResponse) => c.checkout_url || c.urls?.checkout;
+/** Salla returns the checkout in English; customers here should get Arabic. */
+export function arabic(url: string | undefined) {
+  if (!url) return url;
+  return url.replace(/\/en\/checkout\//, '/ar/checkout/').replace(/([?&])lang=en(?=&|$)/, '$1lang=ar');
+}
+
+const checkoutUrlOf = (c: CartResponse) => arabic(c.checkout_url || c.urls?.checkout);
 
 async function post(url: string, storeId: string, body: unknown) {
   const res = await fetch(url, { method: 'POST', headers: headers(storeId), body: JSON.stringify(body) });

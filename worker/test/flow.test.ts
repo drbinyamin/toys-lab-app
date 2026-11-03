@@ -203,6 +203,8 @@ check('Empty cart rejected', (await req('/checkout', { method: 'POST', body: JSO
 mem.set('catalog', JSON.stringify({ updatedAt: Date.now(), products: [{ id: '1001', name: 'لعبة 1', category: 'boys', age: '6+', price: 101 }] }));
 const test = await (await req('/checkout/test')).json() as { ok: boolean; checkoutUrl?: string };
 check('Test page confirms checkout works', test.ok === true && !!test.checkoutUrl, test);
+const { arabic } = await import('../src/checkout');
+check('Checkout link switched to Arabic', arabic('https://toys-lab.com/en/checkout/abc?lang=en&') === 'https://toys-lab.com/ar/checkout/abc?lang=ar&', arabic('https://toys-lab.com/en/checkout/abc?lang=en&'));
 globalThis.fetch = beforeCheckout;
 
 // ---- Uninstall clears the key ----
