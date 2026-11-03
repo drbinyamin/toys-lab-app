@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Toys Lab",
+    "slug": "toys-lab",
+    "scheme": "toyslab",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFC928"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.toyslab.app"
+    },
+    "android": {
+      "package": "com.toyslab.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#FFC928",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}

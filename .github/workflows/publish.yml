@@ -1,0 +1,69 @@
+name: Publish to phones
+
+# Every push to main sends the new version of the app to Expo,
+# so it shows up on phones that open the app in Expo Go.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: Check the Expo token is set
+        id: token
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::warning::EXPO_TOKEN secret is not set yet. Add it in Settings → Secrets and variables → Actions."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.token.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        if: steps.token.outputs.ready == 'true'
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install
+        if: steps.token.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Link the Expo project (first run only)
+        if: steps.token.outputs.ready == 'true'
+        run: |
+          if ! grep -q '"projectId"' app.json; then
+            eas init --non-interactive --force
+            eas update:configure --platform all --non-interactive || true
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add app.json
+            git commit -m "Link Expo project [skip ci]" || true
+            git push
+          fi
+
+      - name: Publish update
+        if: steps.token.outputs.ready == 'true'
+        env:
+          MESSAGE: ${{ github.event.head_commit.message || 'Manual publish' }}
+        run: eas update --branch main --message "$MESSAGE" --non-interactive
