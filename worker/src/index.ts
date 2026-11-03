@@ -2,12 +2,15 @@
 //
 //   POST /webhook  Salla sends the store's access key here when the app is installed
 //   GET  /catalog  The app reads the product list from here
+//   POST /checkout The app sends the cart here and gets a Salla payment page link
+//   GET  /checkout/test  Opens a test cart to confirm payments are set up
 //   GET  /         Status page (connected? last sync? how many products?)
 //
 // A timer (see wrangler.toml) refreshes the access key before it expires and
 // re-reads the products every few minutes. Products are read in chunks so each
 // run stays within Cloudflare's free-plan request limit.
 
+import { createCheckout, findBase, parseItems } from './checkout';
 import { AppProduct, indexCategories, mapProduct, tagNewest } from './mapping';
 import { Page, refreshTokens, SallaCategory, SallaProduct, sallaGet, Tokens, verifyWebhook } from './salla';
 
@@ -44,7 +47,7 @@ const REFRESH_WHEN_LESS_THAN = 3 * 24 * 3600; // renew the key when under 3 days
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
@@ -164,12 +167,63 @@ async function handleWebhook(req: Request, env: Env, ctx: Ctx) {
   return json({ ok: true });
 }
 
+/** The store's Salla id, needed by the checkout service. */
+async function storeId(env: Env): Promise<string | null> {
+  const tokens = await readJSON<Tokens>(env.STORE, 'tokens');
+  if (!tokens) return null;
+  if (tokens.merchant) return String(tokens.merchant);
+  const fresh = await validTokens(env);
+  if (!fresh) return null;
+  const info = await sallaGet<{ data?: { id?: number } }>('/store/info', fresh.accessToken);
+  if (!info.data?.id) return null;
+  await env.STORE.put('tokens', JSON.stringify({ ...fresh, merchant: info.data.id }));
+  return String(info.data.id);
+}
+
+async function handleCheckout(req: Request, env: Env) {
+  const id = await storeId(env);
+  if (!id) return json({ error: 'Store not connected yet' }, 503);
+  let body: unknown;
+  try { body = await req.json(); } catch { return json({ error: 'Invalid JSON' }, 400); }
+  const items = parseItems(body);
+  if (!items) return json({ error: 'Send 1 to 25 items as { id, quantity }' }, 400);
+  const noteRaw = (body as { note?: unknown }).note;
+  const note = typeof noteRaw === 'string' && noteRaw.trim() ? noteRaw.trim().slice(0, 300) : undefined;
+
+  const known = await env.STORE.get('checkoutBase');
+  const result = await createCheckout(id, items, note, known);
+  if (result.base && result.base !== known) await env.STORE.put('checkoutBase', result.base);
+  if (!result.ok) {
+    await env.STORE.put('lastCheckoutError', JSON.stringify({ at: new Date().toISOString(), ...result }));
+    return json({ error: result.error }, 502);
+  }
+  return json({ checkoutUrl: result.checkoutUrl, skipped: result.failed.map((f) => f.id) });
+}
+
+async function handleCheckoutTest(env: Env) {
+  const id = await storeId(env);
+  if (!id) return json({ ok: false, error: 'Store not connected yet' });
+  const catalog = await readJSON<Catalog>(env.STORE, 'catalog');
+  const sample = catalog?.products.find((p) => /^\d+$/.test(p.id));
+  const base = await findBase(id, await env.STORE.get('checkoutBase'));
+  if (!base.base) {
+    const lastCheckoutError = await readJSON(env.STORE, 'lastCheckoutError');
+    return json({ ok: false, storeId: id, error: 'No checkout address worked', tried: base.tried, lastCheckoutError });
+  }
+  await env.STORE.put('checkoutBase', base.base);
+  if (!sample) return json({ ok: true, storeId: id, base: base.base, note: 'Cart works; no products yet to test adding' });
+  const result = await createCheckout(id, [{ id: sample.id, quantity: 1 }], undefined, base.base);
+  return json({ storeId: id, testProduct: sample.name, ...result });
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: Ctx): Promise<Response> {
     const url = new URL(req.url);
     if (req.method === 'OPTIONS') return new Response(null, { headers: cors });
 
     if (url.pathname === '/webhook' && req.method === 'POST') return handleWebhook(req, env, ctx);
+    if (url.pathname === '/checkout' && req.method === 'POST') return handleCheckout(req, env);
+    if (url.pathname === '/checkout/test' && req.method === 'GET') return handleCheckoutTest(env);
 
     if (url.pathname === '/catalog' && req.method === 'GET') {
       const catalog = await env.STORE.get('catalog');

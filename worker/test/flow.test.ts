@@ -156,10 +156,58 @@ await worker.scheduled({}, env, ctx); await Promise.all(pending);
 const fixed = await (await req('/')).json() as { lastError: unknown };
 check('Error clears after a good run', fixed.lastError === null);
 
+// ---- Checkout: cart on the store's Salla checkout ----
+const carts = new Map<string, { items: { identifier: number; quantity: number; notes?: string }[]; store: string }>();
+let checkoutCalls: string[] = [];
+const beforeCheckout = globalThis.fetch;
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = new URL(String(input));
+  if (url.pathname.includes('/checkout')) {
+    checkoutCalls.push(url.pathname);
+    const h = new Headers(init?.headers);
+    if (url.pathname.startsWith('/store/v2/')) return new Response('{"error":"not found"}', { status: 404 });
+    if (!h.get('store-identifier') || h.get('s-source') !== 'app') return new Response('{"error":"missing headers"}', { status: 400 });
+    if (url.pathname === '/v2/checkout/generate') {
+      const id = `cart${carts.size + 1}`;
+      carts.set(id, { items: [], store: h.get('store-identifier')! });
+      return Response.json({ data: { id, checkout_url: `https://toys-lab.com/checkout/${id}` } });
+    }
+    const m = url.pathname.match(/^\/v2\/checkout\/([^/]+)\/items$/);
+    if (m && carts.has(m[1])) {
+      const item = JSON.parse(String(init?.body));
+      if (item.identifier === 9999) return new Response('{"error":"product not found"}', { status: 404 });
+      carts.get(m[1])!.items.push(item);
+      return Response.json({ data: { id: m[1], checkout_url: `https://toys-lab.com/checkout/${m[1]}` } });
+    }
+    return new Response('{"error":"not found"}', { status: 404 });
+  }
+  return beforeCheckout(input, init);
+}) as typeof fetch;
+
+const co = await req('/checkout', { method: 'POST', body: JSON.stringify({ items: [{ id: '1001', quantity: 2 }, { id: '1002', quantity: 1 }], note: 'كل عام وأنت بخير' }) });
+const coBody = await co.json() as { checkoutUrl?: string; skipped?: string[] };
+check('Checkout returns a Salla payment link', co.status === 200 && coBody.checkoutUrl === 'https://toys-lab.com/checkout/cart1', coBody);
+const cart1 = carts.get('cart1')!;
+check('Cart made on the right store with both items', cart1.store === '42' && cart1.items.length === 2 && cart1.items[0].identifier === 1001 && cart1.items[0].quantity === 2, cart1);
+check('Gift message sent as a note on the first item only', cart1.items[0].notes === 'كل عام وأنت بخير' && !cart1.items[1].notes);
+check('Working checkout address remembered', mem.get('checkoutBase') === 'https://api.salla.dev/v2/checkout');
+checkoutCalls = [];
+await req('/checkout', { method: 'POST', body: JSON.stringify({ items: [{ id: '1001', quantity: 1 }] }) });
+check('Second checkout goes straight to the remembered address', checkoutCalls[0] === '/v2/checkout/generate', checkoutCalls);
+const partial = await (await req('/checkout', { method: 'POST', body: JSON.stringify({ items: [{ id: '1001', quantity: 1 }, { id: '9999', quantity: 1 }] }) })).json() as { checkoutUrl?: string; skipped?: string[] };
+check('Unavailable item skipped, rest still paid', !!partial.checkoutUrl && partial.skipped?.[0] === '9999', partial);
+check('Bad cart rejected', (await req('/checkout', { method: 'POST', body: JSON.stringify({ items: [{ id: 'gc-100', quantity: 1 }] }) })).status === 400);
+check('Empty cart rejected', (await req('/checkout', { method: 'POST', body: JSON.stringify({ items: [] }) })).status === 400);
+mem.set('catalog', JSON.stringify({ updatedAt: Date.now(), products: [{ id: '1001', name: 'لعبة 1', category: 'boys', age: '6+', price: 101 }] }));
+const test = await (await req('/checkout/test')).json() as { ok: boolean; checkoutUrl?: string };
+check('Test page confirms checkout works', test.ok === true && !!test.checkoutUrl, test);
+globalThis.fetch = beforeCheckout;
+
 // ---- Uninstall clears the key ----
 const bye = JSON.stringify({ event: 'app.uninstalled', merchant: 42, data: {} });
 await req('/webhook', { method: 'POST', body: bye, headers: { authorization: 'Bearer whsecret' } });
 check('Uninstall removes the key', !mem.has('tokens'));
+check('Checkout refuses when not connected', (await req('/checkout', { method: 'POST', body: JSON.stringify({ items: [{ id: '1001', quantity: 1 }] }) })).status === 503);
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');
 process.exit(failures ? 1 : 0);

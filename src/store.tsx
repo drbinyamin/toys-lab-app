@@ -20,6 +20,7 @@ type State = {
   cart: Record<string, number>;
   add: (id: string) => number; // returns new items total
   change: (id: string, delta: number) => void;
+  clearCart: () => void;
   favs: string[];
   toggleFav: (id: string) => void;
   city: string;
@@ -113,11 +114,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       else n[id] = q;
       return n;
     });
+  const clearCart = () => setCart({});
   const toggleFav = (id: string) => setFavs((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]));
   const setFilters = (f: Partial<Filters>) => setF((cur) => ({ ...cur, ...f }));
 
   const value: State = {
-    products, isSample, loading, tab, setTab, filters, setFilters, cart, add, change, favs, toggleFav,
+    products, isSample, loading, tab, setTab, filters, setFilters, cart, add, change, clearCart, favs, toggleFav,
     city, setCity, delivery, setDelivery, payment, setPayment, wrap, setWrap, message, setMessage,
     balloons, setBalloons, byId, itemsTotal, grandTotal, count, openProduct, setOpenProduct, cityPicker, setCityPicker,
   };

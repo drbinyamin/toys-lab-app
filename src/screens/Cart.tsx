@@ -1,17 +1,27 @@
-import React from 'react';
-import { Pressable, Switch, TextInput, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Pressable, Switch, TextInput, View } from 'react-native';
+import { payOnStore } from '../api/checkout';
 import { Icon, Mascot } from '../components/Icons';
 import { ProductThumb } from '../components/ProductCard';
+import { useToast } from '../components/Toast';
 import { Button, Empty, Panel, T } from '../components/ui';
 import { STORE } from '../data/catalog';
 import { deliveryOptions, openWhatsApp, orderText, PAYMENT_LABEL } from '../order';
 import { Payment, useStore } from '../store';
 import { fonts, money, useColors } from '../theme';
 
+const isGiftCard = (id: string) => id.startsWith('gc-');
+
 export function CartScreen() {
   const c = useColors();
   const s = useStore();
+  const toast = useToast();
+  const [paying, setPaying] = useState(false);
+  const [returnedFromPay, setReturnedFromPay] = useState(false);
   const ids = Object.keys(s.cart).filter((id) => s.byId(id));
+  // With the real store connected, payment happens on the store's Salla checkout,
+  // which handles delivery, payment methods and shipping itself.
+  const live = !s.isSample;
 
   if (!ids.length) {
     return (
@@ -25,7 +35,24 @@ export function CartScreen() {
   const left = Math.max(0, free - s.itemsTotal);
   const freeShip = !left || s.delivery === 'pickup';
   const lines = ids.map((id) => ({ name: s.byId(id)!.name, qty: s.cart[id], price: s.byId(id)!.price }));
-  const text = orderText({ lines, balloons: s.balloons, city: s.city, delivery: s.delivery, payment: s.payment, wrap: s.wrap, message: s.message, total: s.grandTotal });
+  const text = orderText({ lines, balloons: !live && s.balloons, city: s.city, delivery: s.delivery, payment: s.payment, wrap: s.wrap, message: s.message, total: live ? s.itemsTotal : s.grandTotal });
+  const storeItems = ids.filter((id) => !isGiftCard(id));
+  const hasGiftCards = ids.some(isGiftCard);
+  const total = live ? s.itemsTotal : s.grandTotal;
+
+  const pay = async () => {
+    if (!storeItems.length) return;
+    setPaying(true);
+    const note = s.wrap ? `تغليف هدية${s.message.trim() ? ` · رسالة الإهداء: ${s.message.trim()}` : ''}` : undefined;
+    const result = await payOnStore(storeItems.map((id) => ({ id, quantity: s.cart[id] })), note);
+    setPaying(false);
+    if (!result.ok) {
+      toast(result.message);
+      return;
+    }
+    if (result.skipped.length) toast('بعض المنتجات نفدت ولم تُضف لصفحة الدفع');
+    setReturnedFromPay(true);
+  };
 
   return (
     <View style={{ padding: 16, gap: 12 }}>
@@ -33,6 +60,17 @@ export function CartScreen() {
         <T weight="displayBold" style={{ fontSize: 21 }}>السلة</T>
         <T muted style={{ fontSize: 13 }}>{s.count} قطع</T>
       </View>
+
+      {returnedFromPay ? (
+        <Panel style={{ borderColor: c.ok }}>
+          <T weight="bold">أكملت الدفع؟</T>
+          <T muted style={{ fontSize: 13 }}>إذا تم الطلب بيوصلك تأكيد من تويز لاب على جوالك. تقدر تفرّغ السلة الحين.</T>
+          <View style={{ flexDirection: 'row-reverse', gap: 8 }}>
+            <Button kind="sun" label="نعم، فرّغ السلة" onPress={() => { s.clearCart(); setReturnedFromPay(false); toast('شكراً لطلبك من تويز لاب'); }} style={{ flex: 1, height: 46 }} />
+            <Button kind="secondary" label="لا، رجوع" onPress={() => setReturnedFromPay(false)} style={{ flex: 1 }} />
+          </View>
+        </Panel>
+      ) : null}
 
       <Panel style={{ gap: 8 }}>
         <T weight="semibold" style={{ fontSize: 13, color: left ? c.muted : c.ok }}>{left ? `باقي ${money(left)} وتحصل على شحن مجاني` : 'مبروك! طلبك عليه شحن مجاني'}</T>
@@ -77,32 +115,49 @@ export function CartScreen() {
             style={{ minHeight: 70, borderWidth: 1, borderColor: c.line, borderRadius: 12, padding: 10, backgroundColor: c.bg, color: c.ink, fontFamily: fonts.body, fontSize: 14, textAlign: 'right', writingDirection: 'rtl', textAlignVertical: 'top' }}
           />
         ) : null}
-        <Toggle label={`أضف بالونات هيليوم (${STORE.balloonPrice} ر.س)`} value={s.balloons} onChange={s.setBalloons} />
+        {!live ? <Toggle label={`أضف بالونات هيليوم (${STORE.balloonPrice} ر.س)`} value={s.balloons} onChange={s.setBalloons} /> : null}
       </Panel>
 
-      <Panel>
-        <PanelTitle icon="truck" title="طريقة الاستلام" />
-        {deliveryOptions(s.city).map((d) => (
-          <Option key={d.id} on={s.delivery === d.id} title={d.title} detail={d.detail} right={d.free || !left ? 'مجاني' : undefined} onPress={() => s.setDelivery(d.id)} />
-        ))}
-      </Panel>
-
-      <Panel>
-        <PanelTitle icon="card" title="طريقة الدفع" />
-        {(Object.keys(PAYMENT_LABEL) as Payment[]).map((id) => (
-          <Option key={id} on={s.payment === id} title={id === 'split' ? 'قسّمها على 4 دفعات' : PAYMENT_LABEL[id]} detail={id === 'split' ? `بدون فوائد · ${(s.grandTotal / 4).toFixed(2)} ر.س شهرياً` : undefined} onPress={() => s.setPayment(id)} />
-        ))}
-      </Panel>
+      {!live ? (
+        <>
+          <Panel>
+            <PanelTitle icon="truck" title="طريقة الاستلام" />
+            {deliveryOptions(s.city).map((d) => (
+              <Option key={d.id} on={s.delivery === d.id} title={d.title} detail={d.detail} right={d.free || !left ? 'مجاني' : undefined} onPress={() => s.setDelivery(d.id)} />
+            ))}
+          </Panel>
+          <Panel>
+            <PanelTitle icon="card" title="طريقة الدفع" />
+            {(Object.keys(PAYMENT_LABEL) as Payment[]).map((id) => (
+              <Option key={id} on={s.payment === id} title={id === 'split' ? 'قسّمها على 4 دفعات' : PAYMENT_LABEL[id]} detail={id === 'split' ? `بدون فوائد · ${(s.grandTotal / 4).toFixed(2)} ر.س شهرياً` : undefined} onPress={() => s.setPayment(id)} />
+            ))}
+          </Panel>
+        </>
+      ) : null}
 
       <Panel>
         <Sum k="المنتجات" v={money(s.itemsTotal)} />
-        {s.balloons ? <Sum k="بالونات هيليوم" v={money(STORE.balloonPrice)} /> : null}
-        <Sum k="الشحن" v={freeShip ? 'مجاني' : 'يُحدد عند التأكيد'} />
+        {!live && s.balloons ? <Sum k="بالونات هيليوم" v={money(STORE.balloonPrice)} /> : null}
+        <Sum k="الشحن" v={freeShip ? 'مجاني' : live ? 'يُحسب في صفحة الدفع' : 'يُحدد عند التأكيد'} />
         <Sum k="التغليف" v={s.wrap ? 'مجاني' : 'بدون'} />
         <View style={{ borderTopWidth: 1, borderStyle: 'dashed', borderColor: c.line, paddingTop: 10 }}>
-          <Sum k="الإجمالي" v={money(s.grandTotal)} big />
+          <Sum k="الإجمالي" v={money(total)} big />
         </View>
-        <Button label="أكمل الطلب عبر واتساب" icon={<Icon name="chat" color="#fff" size={20} />} onPress={() => openWhatsApp(text)} />
+
+        {live ? (
+          <>
+            <Button
+              label={paying ? 'جاري فتح صفحة الدفع…' : 'ادفع الآن'}
+              icon={paying ? <ActivityIndicator color="#fff" /> : <Icon name="card" color="#fff" size={20} />}
+              onPress={() => { if (!paying) pay(); }}
+            />
+            <T muted style={{ fontSize: 12, textAlign: 'center' }}>الدفع آمن عبر متجر تويز لاب في سلة: مدى، فيزا، Apple Pay والتقسيط</T>
+            {hasGiftCards ? <T weight="semibold" style={{ fontSize: 12, textAlign: 'center', color: c.sale }}>بطاقات الهدايا تُطلب عبر الواتساب ولا تُضاف لصفحة الدفع</T> : null}
+            <Button kind="secondary" label="أو اطلب عبر واتساب" icon={<Icon name="chat" color={c.ok} size={18} />} onPress={() => openWhatsApp(text)} />
+          </>
+        ) : (
+          <Button label="أكمل الطلب عبر واتساب" icon={<Icon name="chat" color="#fff" size={20} />} onPress={() => openWhatsApp(text)} />
+        )}
         <T muted style={{ fontSize: 12.5, textAlign: 'center' }}>واتساب المتجر: {STORE.whatsappDisplay}</T>
       </Panel>
     </View>
