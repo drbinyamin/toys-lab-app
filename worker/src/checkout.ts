@@ -71,7 +71,7 @@ export async function createCheckout(storeId: string, items: CheckoutItem[], not
   for (const [i, item] of items.entries()) {
     const r = await post(`${base}/${cart.id}/items`, storeId, {
       identifier_type: 'id',
-      identifier: Number(item.id),
+      identifier: item.id, // Salla requires text here
       quantity: item.quantity,
       ...(i === 0 && note ? { notes: note } : {}),
     });

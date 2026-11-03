@@ -157,7 +157,7 @@ const fixed = await (await req('/')).json() as { lastError: unknown };
 check('Error clears after a good run', fixed.lastError === null);
 
 // ---- Checkout: cart on the store's Salla checkout ----
-const carts = new Map<string, { items: { identifier: number; quantity: number; notes?: string }[]; store: string }>();
+const carts = new Map<string, { items: { identifier: string; quantity: number; notes?: string }[]; store: string }>();
 let checkoutCalls: string[] = [];
 const beforeCheckout = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -175,7 +175,9 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const m = url.pathname.match(/^\/v2\/checkout\/([^/]+)\/items$/);
     if (m && carts.has(m[1])) {
       const item = JSON.parse(String(init?.body));
-      if (item.identifier === 9999) return new Response('{"error":"product not found"}', { status: 404 });
+      // Like the live store: identifier must be text
+      if (typeof item.identifier !== 'string') return new Response('{"error":{"fields":{"identifier":["identifier field must be text."]}}}', { status: 422 });
+      if (item.identifier === '9999') return new Response('{"error":"product not found"}', { status: 404 });
       carts.get(m[1])!.items.push(item);
       return Response.json({ data: { id: m[1], checkout_url: `https://toys-lab.com/checkout/${m[1]}` } });
     }
@@ -188,7 +190,7 @@ const co = await req('/checkout', { method: 'POST', body: JSON.stringify({ items
 const coBody = await co.json() as { checkoutUrl?: string; skipped?: string[] };
 check('Checkout returns a Salla payment link', co.status === 200 && coBody.checkoutUrl === 'https://toys-lab.com/checkout/cart1', coBody);
 const cart1 = carts.get('cart1')!;
-check('Cart made on the right store with both items', cart1.store === '42' && cart1.items.length === 2 && cart1.items[0].identifier === 1001 && cart1.items[0].quantity === 2, cart1);
+check('Cart made on the right store with both items', cart1.store === '42' && cart1.items.length === 2 && cart1.items[0].identifier === '1001' && cart1.items[0].quantity === 2, cart1);
 check('Gift message sent as a note on the first item only', cart1.items[0].notes === 'كل عام وأنت بخير' && !cart1.items[1].notes);
 check('Working checkout address remembered', mem.get('checkoutBase') === 'https://api.salla.dev/v2/checkout');
 checkoutCalls = [];
