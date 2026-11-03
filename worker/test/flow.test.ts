@@ -101,6 +101,8 @@ const ps = catalog.products;
 check('Catalog published after first sync', ps.length > 0, ps.length);
 check('Hidden and sold-out products left out', !ps.some((p) => p.id === '1003') && !ps.some((p) => p.id === '1025' || p.id === '1050'));
 check('All 3 pages read', ps.some((p) => p.id === '1130') && productCalls === 3, productCalls);
+const statusOk = await (await req('/')).json() as { lastError: unknown };
+check('No error shown after a good sync', statusOk.lastError === null);
 const p10 = ps.find((p) => p.id === '1010')!;
 check('Sale price mapped', p10.price === 80 && p10.oldPrice === 110, p10);
 const p1 = ps.find((p) => p.id === '1001')!;
@@ -124,10 +126,35 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   }
   return realFetch(input, init);
 }) as typeof fetch;
+// A fresh install only gets a few pages done; the timer continues from there.
+const body2 = JSON.stringify({ event: 'app.store.authorize', merchant: 42, data: { access_token: 'access-9', refresh_token: 'refresh-9', expires: Math.floor(Date.now() / 1000) + 14 * 86400 } });
+await req('/webhook', { method: 'POST', body: body2, headers: { authorization: 'whsecret' } });
+await Promise.all(pending);
+check('Install run reads only 6 pages and saves progress', productCalls === 6 && JSON.parse(mem.get('building')!).nextPage === 7, productCalls);
+const st = await (await req('/')).json() as { syncing: string | null };
+check('Status shows progress', st.syncing?.startsWith('6 of 50 pages') === true, st.syncing);
 await worker.scheduled({}, env, ctx); await Promise.all(pending);
-check('First run stops at 30 pages', productCalls === 30 && !mem.has('catalog') && mem.has('building'), productCalls);
+check('Timer run continues to page 36', productCalls === 36 && !mem.has('catalog'), productCalls);
 await worker.scheduled({}, env, ctx); await Promise.all(pending);
-check('Second run finishes and publishes', productCalls === 50 && mem.has('catalog') && !mem.has('building'), productCalls);
+check('Next timer run finishes and publishes', productCalls === 50 && mem.has('catalog') && !mem.has('building'), productCalls);
+
+// An error from Salla is shown on the status page, and progress so far is kept
+mem.delete('catalog');
+let calls = 0;
+const okFetch = globalThis.fetch;
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = new URL(String(input));
+  if (url.pathname.endsWith('/products') && ++calls === 5) return new Response('{"error":"rate limited"}', { status: 429 });
+  return okFetch(input, init);
+}) as typeof fetch;
+await worker.scheduled({}, env, ctx); await Promise.all(pending);
+const errStatus = await (await req('/')).json() as { lastError: { message: string } | null; syncing: string | null };
+check('Error shown on status page', !!errStatus.lastError && errStatus.lastError.message.includes('429'), errStatus);
+check('Pages read before the error are kept', JSON.parse(mem.get('building')!).nextPage === 5, mem.get('building')?.slice(0, 80));
+globalThis.fetch = okFetch;
+await worker.scheduled({}, env, ctx); await Promise.all(pending);
+const fixed = await (await req('/')).json() as { lastError: unknown };
+check('Error clears after a good run', fixed.lastError === null);
 
 // ---- Uninstall clears the key ----
 const bye = JSON.stringify({ event: 'app.uninstalled', merchant: 42, data: {} });

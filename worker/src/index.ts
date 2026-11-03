@@ -37,7 +37,9 @@ type Building = {
 type Catalog = { updatedAt: number; products: AppProduct[] };
 
 const PER_PAGE = 50;
-const PAGES_PER_RUN = 30; // stays under the free plan's 50 outgoing requests per run
+const PAGES_PER_RUN = 30; // timer runs: stays under the free plan's 50 outgoing requests per run
+const PAGES_AFTER_INSTALL = 6; // right after installing, Cloudflare allows only ~30 seconds of extra work
+const SAVE_EVERY = 3; // save progress every few pages so a cut-off run loses little
 const REFRESH_WHEN_LESS_THAN = 3 * 24 * 3600; // renew the key when under 3 days are left
 
 const cors = {
@@ -75,7 +77,19 @@ async function fetchCategories(token: string) {
 }
 
 /** Reads the next chunk of products; publishes the catalog when all pages are in. */
-export async function syncStep(env: Env): Promise<string> {
+export async function syncStep(env: Env, maxPages = PAGES_PER_RUN): Promise<string> {
+  try {
+    const result = await runSync(env, maxPages);
+    await env.STORE.delete('lastError');
+    return result;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    await env.STORE.put('lastError', JSON.stringify({ at: new Date().toISOString(), message: message.slice(0, 500) }));
+    throw e;
+  }
+}
+
+async function runSync(env: Env, maxPages: number): Promise<string> {
   const tokens = await validTokens(env);
   if (!tokens) return 'not connected';
 
@@ -83,17 +97,27 @@ export async function syncStep(env: Env): Promise<string> {
   if (!b) {
     const cats = await fetchCategories(tokens.accessToken);
     b = { startedAt: Date.now(), nextPage: 1, totalPages: 1, products: [], categories: [...cats.entries()] };
+    await env.STORE.put('building', JSON.stringify(b));
   }
   const cats = new Map(b.categories);
 
-  for (let i = 0; i < PAGES_PER_RUN && b.nextPage <= b.totalPages; i++) {
-    const res = await sallaGet<Page<SallaProduct>>(`/products?page=${b.nextPage}&per_page=${PER_PAGE}`, tokens.accessToken);
-    for (const p of res.data ?? []) {
-      const m = mapProduct(p, cats);
-      if (m) b.products.push(m);
+  // Short install-time runs save as they go (they can be cut off); timer runs
+  // save once at the end, or straight away if something goes wrong.
+  const saveEvery = maxPages <= PAGES_AFTER_INSTALL ? SAVE_EVERY : Infinity;
+  try {
+    for (let i = 0; i < maxPages && b.nextPage <= b.totalPages; i++) {
+      const res = await sallaGet<Page<SallaProduct>>(`/products?page=${b.nextPage}&per_page=${PER_PAGE}`, tokens.accessToken);
+      for (const p of res.data ?? []) {
+        const m = mapProduct(p, cats);
+        if (m) b.products.push(m);
+      }
+      b.totalPages = res.pagination?.totalPages ?? b.nextPage;
+      b.nextPage++;
+      if (i % saveEvery === saveEvery - 1 && b.nextPage <= b.totalPages) await env.STORE.put('building', JSON.stringify(b));
     }
-    b.totalPages = res.pagination?.totalPages ?? b.nextPage;
-    b.nextPage++;
+  } catch (e) {
+    await env.STORE.put('building', JSON.stringify(b));
+    throw e;
   }
 
   if (b.nextPage > b.totalPages) {
@@ -132,7 +156,7 @@ async function handleWebhook(req: Request, env: Env, ctx: Ctx) {
     };
     await env.STORE.put('tokens', JSON.stringify(tokens));
     await env.STORE.delete('building');
-    ctx.waitUntil(syncStep(env).catch((e) => console.error('First sync failed', e)));
+    ctx.waitUntil(syncStep(env, PAGES_AFTER_INSTALL).catch((e) => console.error('First sync failed', e)));
   } else if (event.event === 'app.uninstalled') {
     await env.STORE.delete('tokens');
     await env.STORE.delete('building');
@@ -154,10 +178,11 @@ export default {
     }
 
     if (url.pathname === '/' && req.method === 'GET') {
-      const [tokens, catalog, building] = await Promise.all([
+      const [tokens, catalog, building, lastError] = await Promise.all([
         readJSON<Tokens>(env.STORE, 'tokens'),
         readJSON<Catalog>(env.STORE, 'catalog'),
         readJSON<Building>(env.STORE, 'building'),
+        readJSON<{ at: string; message: string }>(env.STORE, 'lastError'),
       ]);
       return json({
         service: 'Toys Lab API',
@@ -165,7 +190,8 @@ export default {
         keyExpires: tokens ? new Date(tokens.expiresAt * 1000).toISOString() : null,
         products: catalog?.products.length ?? 0,
         lastSync: catalog ? new Date(catalog.updatedAt).toISOString() : null,
-        syncing: building ? `${building.nextPage - 1} of ${building.totalPages} pages` : null,
+        syncing: building ? `${building.nextPage - 1} of ${building.totalPages} pages, ${building.products.length} products so far` : null,
+        lastError,
       });
     }
 
