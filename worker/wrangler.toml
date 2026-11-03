@@ -1,0 +1,13 @@
+name = "toyslab-api"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+workers_dev = true
+
+# Re-read products every 10 minutes and renew the Salla key when needed.
+[triggers]
+crons = ["*/10 * * * *"]
+
+# The storage id is filled in by .github/workflows/deploy-api.yml on each deploy.
+[[kv_namespaces]]
+binding = "STORE"
+id = "KV_NAMESPACE_ID"

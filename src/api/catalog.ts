@@ -1,17 +1,18 @@
-import { Product, SAMPLE_PRODUCTS } from '../data/catalog';
+import { Product, SAMPLE_PRODUCTS, STORE } from '../data/catalog';
 
 /**
  * Where products come from.
  *
  * The Salla API needs a secret key, which must never ship inside the app.
- * So the app reads from a small server of ours (to be built once the store
- * owner shares the Salla app keys). That server talks to Salla and returns:
+ * So the app reads from our store-connection server (worker/), which talks to
+ * Salla and returns:
  *
  *   { "products": Product[] }   // see the Product type in src/data/catalog.ts
  *
- * Until EXPO_PUBLIC_CATALOG_URL is set, the app shows the sample products.
+ * Until STORE.catalogUrl (or EXPO_PUBLIC_CATALOG_URL) is set and the store is
+ * connected, the app shows the sample products.
  */
-const CATALOG_URL = process.env.EXPO_PUBLIC_CATALOG_URL;
+const CATALOG_URL = process.env.EXPO_PUBLIC_CATALOG_URL || (STORE.catalogUrl ? `${STORE.catalogUrl}/catalog` : '');
 
 export type CatalogResult = { products: Product[]; isSample: boolean };
 

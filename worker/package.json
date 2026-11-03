@@ -1,0 +1,14 @@
+{
+  "name": "toyslab-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "esbuild test/flow.test.ts --bundle --platform=node --format=esm --outfile=.test/flow.mjs --log-level=warning && node .test/flow.mjs"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3",
+    "wrangler": "4.151.2"
+  }
+}

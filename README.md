@@ -22,15 +22,20 @@ Every push to `main` publishes a new version automatically through `.github/work
 
 ## Connecting the real stock (Salla)
 
-The Salla API needs a secret key, so the app never talks to Salla directly. A small server will read products and stock from Salla and give the app a list in this shape (see `Product` in `src/data/catalog.ts`):
+The Salla API needs a secret key, so the app never talks to Salla directly. The server in `worker/` (Cloudflare Workers, free plan) does it:
 
-```json
-{ "products": [{ "id": "123", "name": "…", "category": "edu", "age": "6+", "price": 159, "oldPrice": 199, "image": "https://…", "stock": 4, "url": "https://toys-lab.com/…" }] }
-```
+- `POST /webhook`: Salla sends the store's access key here when the app is installed on the store (Easy Mode). Accepts both the Signature and Token webhook strategies.
+- `GET /catalog`: the product list the app reads (real photos, prices, sale prices, stock, store links). Hidden and sold-out products are left out.
+- `GET /`: status page (connected or not, last sync, product count).
+- Every 10 minutes it renews the key when fewer than 3 days are left and re-reads the products in chunks (30 pages per run, to stay inside the free plan's limits).
 
-Set its address as `EXPO_PUBLIC_CATALOG_URL` and the app switches from the sample products to the real ones. Payment will move to the store's Salla checkout page so cards, Mada and Apple Pay work exactly as on the website.
+Store categories and age groups are matched to the app's own by name (`worker/src/mapping.ts`).
 
-Needed from the store owner: a private app in the Salla Partners portal, and its Client ID and Client Secret (shared privately, never committed here).
+It deploys automatically through `.github/workflows/deploy-api.yml` on changes under `worker/`. Repository secrets it needs: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `SALLA_CLIENT_ID`, `SALLA_CLIENT_SECRET`, `SALLA_WEBHOOK_SECRET`. The deploy summary shows the webhook URL to paste into the Salla Partners portal.
+
+After the first deploy, put the server address in `STORE.catalogUrl` (`src/data/catalog.ts`). Until the store is connected, the app shows sample products.
+
+Tests: `cd worker && npm test` runs the whole flow against a simulated Salla.
 
 ## Run locally
 

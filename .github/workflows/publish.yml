@@ -5,6 +5,9 @@ name: Publish to phones
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'worker/**'
+      - '.github/workflows/deploy-api.yml'
   workflow_dispatch:
 
 permissions:

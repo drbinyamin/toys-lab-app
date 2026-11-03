@@ -8,6 +8,8 @@ export const STORE = {
   freeShippingFrom: 150,
   balloonPrice: 35, // placeholder: confirm with the store
   website: 'https://toys-lab.com/ar',
+  // Address of our store-connection server (worker/). Filled in after its first deploy.
+  catalogUrl: '',
 };
 
 export type IconName =
@@ -29,6 +31,7 @@ export type Product = {
   forWho?: 'b' | 'g' | 'a'; // boy / girl / any (gift finder)
   stock?: number;
   url?: string; // product page on the store
+  brand?: string;
   hue?: string; // gift cards only
 };
 

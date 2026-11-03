@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
+import { Linking, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { categoryOf, CITIES, STORE } from '../data/catalog';
 import { openWhatsApp } from '../order';
@@ -54,7 +54,12 @@ export function ProductSheet() {
             <Panel style={{ gap: 6, padding: 12 }}>
               <Row k="العمر المناسب" v={p.age.includes('كل') ? p.age : `${p.age} سنوات`} />
               <Row k="القسم" v={cat.name} />
-              <Row k="التوفر" v={`متوفر · ${jeddah ? 'يوصلك اليوم' : 'يوصلك خلال 2 إلى 4 أيام'}`} color={c.ok} />
+              {p.brand ? <Row k="الماركة" v={p.brand} /> : null}
+              <Row
+                k="التوفر"
+                v={`${p.stock !== undefined && p.stock <= 3 ? `باقي ${p.stock} فقط` : 'متوفر'} · ${jeddah ? 'يوصلك اليوم' : 'يوصلك خلال 2 إلى 4 أيام'}`}
+                color={p.stock !== undefined && p.stock <= 3 ? c.sale : c.ok}
+              />
             </Panel>
             <View style={{ gap: 6 }}>
               <Perk icon="wrap" text="تغليف هدايا مجاني مع رسالة إهداء" />
@@ -65,6 +70,9 @@ export function ProductSheet() {
               <Button kind="sun" label="أضف للسلة" icon={<Icon name="bag" color={c.onSun} size={20} />} onPress={() => { addToCart(p.id); close(); }} style={{ flex: 1 }} />
               <FavButton id={p.id} style={{ width: 52, height: 52, borderRadius: 16, shadowOpacity: 0, elevation: 0, borderWidth: 1, borderColor: c.line }} />
             </View>
+            {p.url ? (
+              <Button kind="secondary" label="اشترِ من موقع المتجر" icon={<Icon name="globe" color={c.brand} size={18} />} onPress={() => Linking.openURL(p.url!)} />
+            ) : null}
             <Button kind="secondary" label="اسأل عن اللعبة بالواتساب" icon={<Icon name="chat" color={c.ok} size={18} />} onPress={() => openWhatsApp(`استفسار عن: ${p.name}`)} />
           </View>
         </>
