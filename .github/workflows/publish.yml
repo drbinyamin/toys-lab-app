@@ -66,4 +66,4 @@ jobs:
         if: steps.token.outputs.ready == 'true'
         env:
           MESSAGE: ${{ github.event.head_commit.message || 'Manual publish' }}
-        run: eas update --branch main --message "$MESSAGE" --non-interactive
+        run: eas update --channel main --message "$MESSAGE" --non-interactive
